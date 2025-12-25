@@ -2,79 +2,41 @@ name: Build RT-Driver
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build-kernel-module:
-    runs-on: ubuntu-22.04
-    
-    strategy:
-      matrix:
-        kernel_version: ['5.4', '5.10', '5.15']
+  build:
+    runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Setup build environment
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex \
-          libssl-dev libelf-dev libncurses-dev \
-          wget git curl kmod cpio
+        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget
     
-    - name: Download Android NDK
+    - name: Setup Clang
       run: |
-        wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
-        unzip -q android-ndk-r26b-linux.zip
-        echo "NDK_HOME=$PWD/android-ndk-r26b" >> $GITHUB_ENV
+        mkdir clang
+        cd clang
+        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz
+        tar xzf clang-r487747c.tar.gz
+        cd ..
+        echo "$PWD/clang/bin" >> $GITHUB_PATH
     
-    - name: Download kernel headers
+    - name: Get kernel source
       run: |
-        # Скачиваем generic kernel headers для примера
-        # Замени на headers от реального устройства
-        mkdir -p kernel-headers
-        cd kernel-headers
-        git clone --depth=1 --branch=android-${{ matrix.kernel_version }} \
-          https://android.googlesource.com/kernel/common || true
-        echo "KDIR=$PWD/common" >> $GITHUB_ENV
+        git clone --depth=1 https://android.googlesource.com/kernel/common kernel
+        cd kernel
+        make ARCH=arm64 LLVM=1 defconfig
+        make ARCH=arm64 LLVM=1 modules_prepare
     
-    - name: Build kernel module
-      run: |
-        export ARCH=arm64
-        export CROSS_COMPILE=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-
-        export PATH=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-        
-        # Если kernel headers не найдены, используем system headers
-        if [ ! -d "$KDIR" ]; then
-          export KDIR=/lib/modules/$(uname -r)/build
-        fi
-        
-        make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE || make
+    - name: Build
+      run: make KDIR=$PWD/kernel
     
-    - name: Check build output
-      run: |
-        ls -lh *.ko || echo "No .ko files found"
-        file *.ko || true
-    
-    - name: Upload artifacts
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-kernel-${{ matrix.kernel_version }}
-        path: |
-          *.ko
-        retention-days: 30
-
-  build-info:
-    runs-on: ubuntu-latest
-    needs: build-kernel-module
-    
-    steps:
-    - name: Build summary
-      run: |
-        echo "## Build completed successfully! 🎉" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Download artifacts from the Actions tab" >> $GITHUB_STEP_SUMMARY
+        name: rt-driver
+        path: "*.ko"
