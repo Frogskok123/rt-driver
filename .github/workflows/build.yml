@@ -16,7 +16,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar gcc-aarch64-linux-gnu
     
-    - name: Download kernel 5.10.136
+    - name: Download and configure kernel 5.10.136
       run: |
         git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
         cd kernel
@@ -24,12 +24,18 @@ jobs:
         # Конфигурация
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
-        # Устанавливаем ТОЧНУЮ версию как в твоей системе
+        # Устанавливаем ТОЧНУЮ версию как в системе
         sed -i 's/EXTRAVERSION =.*/EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114/' Makefile
         sed -i 's/SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         
+        # ВАЖНО: Коммитим изменения чтобы убрать -dirty
+        git config user.email "ci@build.local"
+        git config user.name "CI Build"
+        git add -A
+        git commit -m "Set kernel version to match target device" || true
+        
         # Проверяем версию
-        echo "Kernel version:"
+        echo "=== Kernel version ==="
         make kernelversion
         
         # Подготовка
@@ -39,19 +45,26 @@ jobs:
     - name: Build module
       run: |
         export KBUILD_MODPOST_WARN=1
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel -j$(nproc)
     
-    - name: Verify vermagic
+    - name: Verify module
       run: |
-        echo "=== Module vermagic ==="
+        echo "=== Module Info ==="
+        modinfo rt-driver.ko
+        echo ""
+        echo "=== Vermagic Check ==="
         modinfo rt-driver.ko | grep vermagic
         echo ""
         echo "Expected: 5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
         echo ""
-        strings rt-driver.ko | grep "[RT]" || echo "Warning: No [RT] debug strings found"
+        echo "=== Debug strings ==="
+        strings rt-driver.ko | grep "[RT]" | head -5 || echo "Warning: No [RT] strings found"
+        echo ""
+        echo "=== Module size ==="
+        ls -lh rt-driver.ko
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-5.10.136-fixed-vermagic
-        path: "*.ko"
+        name: rt-driver-vermagic-fixed
+        path: rt-driver.ko
