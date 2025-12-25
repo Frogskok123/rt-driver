@@ -14,53 +14,41 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget cpio kmod
+        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar
     
     - name: Setup Clang
       run: |
-        mkdir clang
-        cd clang
-        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz
-        tar xzf clang-r487747c.tar.gz
-        cd ..
+        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android14-release/clang-r487747c.tar.gz
+        mkdir clang && tar xzf clang-r487747c.tar.gz -C clang
         echo "$PWD/clang/bin" >> $GITHUB_PATH
     
-    - name: Get kernel source
+    - name: Download Android 12 kernel 5.10
       run: |
-        git clone --depth=1 https://android.googlesource.com/kernel/common kernel
+        git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
         cd kernel
         
-        # Конфигурация
-        make ARCH=arm64 LLVM=1 defconfig
+        # Конфигурация для Android 12
+        make ARCH=arm64 LLVM=1 gki_defconfig
         
-        # Включаем поддержку модулей
-        ./scripts/config --enable CONFIG_MODULES
-        ./scripts/config --enable CONFIG_MODULE_UNLOAD
-        ./scripts/config --enable CONFIG_KALLSYMS
-        ./scripts/config --enable CONFIG_KALLSYMS_ALL
-        
-        # Полная подготовка kernel
-        make ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc) modules_prepare
+        # Подготовка модулей
+        make ARCH=arm64 LLVM=1 modules_prepare -j$(nproc)
         
         # Создаём Module.symvers
-        make ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc) modules || true
+        touch Module.symvers
     
     - name: Build module
       run: |
-        export ARCH=arm64
-        export LLVM=1
-        export LLVM_IAS=1
         export KBUILD_MODPOST_WARN=1
-        make KDIR=$PWD/kernel
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 KDIR=$PWD/kernel
     
-    - name: Check output
+    - name: Check build
       run: |
-        ls -lh *.ko || echo "No .ko file"
-        file *.ko || true
+        ls -lh rt-driver.ko
+        file rt-driver.ko
+        modinfo rt-driver.ko || true
     
     - name: Upload
       uses: actions/upload-artifact@v4
-      if: success()
       with:
-        name: rt-driver
+        name: rt-driver-5.10.136-android12
         path: "*.ko"
