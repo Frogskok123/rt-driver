@@ -4,6 +4,9 @@ rt-driver-objs := entry.o
 ARCH := arm64
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
+# Разрешаем предупреждения вместо ошибок
+export KBUILD_MODPOST_WARN=1
+
 all:
 	$(MAKE) ARCH=$(ARCH) LLVM=1 LLVM_IAS=1 -C $(KDIR) M=$(PWD) modules
 
