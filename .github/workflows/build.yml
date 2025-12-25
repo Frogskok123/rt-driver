@@ -1,5 +1,4 @@
-
-name: Build RT Driver for Nubia Z40S Pro (plato)
+name: Build RT Driver (rwProcMem33 method)
 
 on: 
   push:
@@ -12,112 +11,50 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install build tools
+    - name: Install tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          gcc-aarch64-linux-gnu \
-          libelf-dev bc bison flex libssl-dev
+        sudo apt-get install -y gcc-aarch64-linux-gnu libelf-dev bc bison flex libssl-dev
     
     - name: Download kernel
       run: |
-        git clone --depth=1 \
-          --branch android12-5.10-lts \
+        git clone --depth=1 --branch android12-5.10-lts \
           https://android.googlesource.com/kernel/common kernel
-        
-        cd kernel
-        echo "=== Kernel commit ==="
-        git log -1 --oneline
     
-    - name: Configure kernel version
+    - name: Configure kernel
       run: |
         cd kernel
-        
         sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         sed -i 's|^EXTRAVERSION =.*|EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114|' Makefile
         echo "" > .scmversion
         
-        echo "=== Kernel version ==="
-        make kernelversion
-    
-    - name: Prepare kernel
-      run: |
-        cd kernel
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
-        
-        # Создаём пустой Module.symvers если нет
-        touch Module.symvers
-        
-        echo "=== Ready to build modules ==="
-        ls -lh Module.symvers
     
-    - name: Show module source structure
+    - name: Build module (rwProcMem33 method)
       run: |
-        echo "=== Module source files ==="
-        ls -la
-        echo ""
-        echo "=== Makefile check ==="
-        if [ -f Makefile ]; then
-          echo "✅ Makefile found"
-          head -10 Makefile
-        else
-          echo "❌ Makefile not found!"
-          exit 1
-        fi
-    
-    - name: Build module
-      run: |
-        # Пути
         KERNEL_DIR=$(pwd)/kernel
         MODULE_SRC=$(pwd)
         
-        echo "=== Building module ==="
-        echo "Kernel: $KERNEL_DIR"
-        echo "Module: $MODULE_SRC"
-        
-        # Переходим в kernel и собираем
         cd "$KERNEL_DIR"
+        
+        # МЕТОД из rwProcMem33: обходим MODVERSIONS
         make -C "$KERNEL_DIR" M="$MODULE_SRC" \
           ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          KBUILD_MODPOST_WARN=1 \
+          EXTRA_CFLAGS="-DCONFIG_MODVERSIONS=0 -fno-pic" \
           modules -j$(nproc)
         
-        echo "=== Build result ==="
-        ls -lh "$MODULE_SRC"/*.ko
+        aarch64-linux-gnu-strip --strip-debug "$MODULE_SRC"/*.ko
     
-    - name: Strip module
+    - name: Verify
       run: |
-        # Strip debug symbols
-        aarch64-linux-gnu-strip --strip-debug *.ko
-        
-        echo "=== After strip ==="
-        ls -lh *.ko
-    
-    - name: Verify module
-      run: |
-        echo "=== Module info ==="
-        file *.ko
         modinfo *.ko
-        
         echo ""
-        echo "=== Vermagic verification ==="
         MODULE_VER=$(modinfo *.ko | grep "vermagic:" | sed 's/vermagic: *//')
-        DEVICE_VER="5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
-        
-        echo "Module  : $MODULE_VER"
-        echo "Device  : $DEVICE_VER"
-        
-        if [ "$MODULE_VER" = "$DEVICE_VER" ]; then
-          echo ""
-          echo "✅✅✅ PERFECT MATCH! Module ready for device! ✅✅✅"
-        else
-          echo ""
-          echo "⚠️  Vermagic differs:"
-          diff -u <(echo "$DEVICE_VER") <(echo "$MODULE_VER") || true
-        fi
+        echo "Vermagic: $MODULE_VER"
     
-    - name: Upload module
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-plato-mt6895
+        name: rt-driver-no-modversions
         path: "*.ko"
