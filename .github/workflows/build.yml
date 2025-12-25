@@ -1,4 +1,5 @@
-name: Build RT Driver (rwProcMem33 method)
+
+name: Build RT Driver (fixed MODVERSIONS)
 
 on: 
   push:
@@ -21,38 +22,58 @@ jobs:
         git clone --depth=1 --branch android12-5.10-lts \
           https://android.googlesource.com/kernel/common kernel
     
-    - name: Configure kernel
+    - name: Configure kernel (disable MODVERSIONS)
       run: |
         cd kernel
+        
+        # Версия
         sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         sed -i 's|^EXTRAVERSION =.*|EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114|' Makefile
         echo "" > .scmversion
         
+        # GKI config
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        
+        # КРИТИЧНО: Отключаем MODVERSIONS в kernel config
+        scripts/config --disable CONFIG_MODVERSIONS
+        scripts/config --disable CONFIG_ASM_MODVERSIONS
+        
+        # Пересобираем config
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+        
+        echo "=== Config check ==="
+        grep MODVERSIONS .config
+        
+        # Prepare
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
     
-    - name: Build module (rwProcMem33 method)
+    - name: Build module
       run: |
         KERNEL_DIR=$(pwd)/kernel
         MODULE_SRC=$(pwd)
         
         cd "$KERNEL_DIR"
         
-        # МЕТОД из rwProcMem33: обходим MODVERSIONS
+        # Собираем БЕЗ дополнительных флагов (MODVERSIONS уже отключён)
         make -C "$KERNEL_DIR" M="$MODULE_SRC" \
           ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-          KBUILD_MODPOST_WARN=1 \
-          EXTRA_CFLAGS="-DCONFIG_MODVERSIONS=0 -fno-pic" \
           modules -j$(nproc)
         
         aarch64-linux-gnu-strip --strip-debug "$MODULE_SRC"/*.ko
     
     - name: Verify
       run: |
+        echo "=== Module info ==="
+        ls -lh *.ko
         modinfo *.ko
+        
         echo ""
-        MODULE_VER=$(modinfo *.ko | grep "vermagic:" | sed 's/vermagic: *//')
-        echo "Vermagic: $MODULE_VER"
+        echo "=== Vermagic ==="
+        modinfo *.ko | grep vermagic
+        
+        echo ""
+        echo "=== Check for MODVERSIONS ==="
+        modinfo *.ko | grep -i version || echo "No version dependency"
     
     - uses: actions/upload-artifact@v4
       with:
