@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4  # ← Обновил до v4
     
     - name: Install dependencies
       run: |
@@ -22,23 +22,21 @@ jobs:
     
     - name: Download exact kernel commit
       run: |
-        # Клонируем GKI kernel
         git clone --depth=1 https://android.googlesource.com/kernel/common kernel
         cd kernel
         
-        # Переключаемся на ТОЧНЫЙ commit из твоего устройства
+        # ТОЧНЫЙ commit из твоего устройства
         git fetch --unshallow origin android12-5.10-lts || git fetch --depth=500 origin android12-5.10-lts
         git checkout gc9f59ef34367
         
         echo "=== Git commit info ==="
         git log -1 --oneline
-        git log -1 --format="%H %s"
     
     - name: Configure kernel version
       run: |
         cd kernel
         
-        # Устанавливаем ТОЧНУЮ версию
+        # ТОЧНАЯ версия
         sed -i 's/^VERSION = .*/VERSION = 5/' Makefile
         sed -i 's/^PATCHLEVEL = .*/PATCHLEVEL = 10/' Makefile
         sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
@@ -47,84 +45,79 @@ jobs:
         # Убираем -dirty
         echo "" > .scmversion
         
-        echo "=== Makefile version ==="
-        head -5 Makefile
-        
         echo "=== Kernel version ==="
         make kernelversion
     
     - name: Configure kernel
       run: |
         cd kernel
-        
-        # Используем GKI config
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
-        # Включаем необходимые опции для модуля
+        # Включаем MODVERSIONS (как на устройстве)
         scripts/config --enable CONFIG_MODULES
         scripts/config --enable CONFIG_MODULE_UNLOAD
         scripts/config --enable CONFIG_MODVERSIONS
         scripts/config --enable CONFIG_MODULE_SRCVERSION_ALL
-        
-        echo "=== Config check ==="
-        grep -E "CONFIG_MODVERSIONS|CONFIG_MODULE" .config | head -10
     
     - name: Prepare kernel headers
       run: |
         cd kernel
-        
-        # Генерируем Module.symvers
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
           modules_prepare -j$(nproc)
         
-        echo "=== Module.symvers generated ==="
+        echo "=== Module.symvers check ==="
         ls -lh Module.symvers
-        echo "=== Module.symvers first 10 lines ==="
-        head -10 Module.symvers
+        head -5 Module.symvers
     
     - name: Build module
       run: |
         cd kernel
-        
-        # Собираем модуль
         make -C $(pwd) M=$(pwd)/../rt-driver \
           ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
           modules -j$(nproc)
         
-        # Strip debug symbols (как у друга)
+        # Strip как у друга
         aarch64-linux-gnu-strip --strip-debug ../rt-driver/rt-driver.ko
     
     - name: Verify module
       run: |
         echo "=== Module Info ==="
-        file rt-driver/rt-driver.ko
         ls -lh rt-driver/rt-driver.ko
+        file rt-driver/rt-driver.ko
         
-        echo "=== Modinfo ==="
+        echo "=== Full modinfo ==="
         modinfo rt-driver/rt-driver.ko
         
+        echo ""
         echo "=== Vermagic Check ==="
-        MODULE_VERMAGIC=$(modinfo rt-driver/rt-driver.ko | grep vermagic | sed 's/vermagic: *//')
-        EXPECTED_VERMAGIC="5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
+        MODULE_VER=$(modinfo rt-driver/rt-driver.ko | grep "vermagic:" | sed 's/vermagic: *//')
+        DEVICE_VER="5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
         
-        echo "Module  : $MODULE_VERMAGIC"
-        echo "Expected: $EXPECTED_VERMAGIC"
+        echo "Module  : $MODULE_VER"
+        echo "Expected: $DEVICE_VER"
         
-        if [ "$MODULE_VERMAGIC" = "$EXPECTED_VERMAGIC" ]; then
-          echo "✅ SUCCESS: Vermagic matches exactly!"
+        if [ "$MODULE_VER" = "$DEVICE_VER" ]; then
+          echo ""
+          echo "✅ SUCCESS: Vermagic matches EXACTLY!"
+          echo "✅ Module should initialize on device!"
         else
-          echo "❌ WARNING: Vermagic mismatch"
+          echo ""
+          echo "❌ MISMATCH detected:"
+          diff -u <(echo "$DEVICE_VER") <(echo "$MODULE_VER") || true
           exit 1
         fi
         
-        echo "=== Symbol check ==="
-        nm rt-driver/rt-driver.ko | grep -E "driver_entry|dispatch_ioctl" || true
+        echo ""
+        echo "=== Symbol table ==="
+        nm rt-driver/rt-driver.ko | grep -E "driver_entry|dispatch_ioctl|module_init" | head -10 || echo "No symbols found"
         
-        echo "=== Strings check ==="
-        strings rt-driver/rt-driver.ko | grep -E "RT|driver" | head -10 || true
+        echo ""
+        echo "=== Debug strings ==="
+        strings rt-driver/rt-driver.ko | grep -E "[RT]|driver" | head -15 || echo "No strings found"
     
-    - name: Upload module
-      uses: actions/upload-artifact@v3
+    - name: Upload module artifact
+      uses: actions/upload-artifact@v4  # ← ОБНОВИЛ до v4
       with:
         name: rt-driver-plato-mt6895
         path: rt-driver/rt-driver.ko
+        compression-level: 0  # Не сжимать .ko файлы
