@@ -1,5 +1,4 @@
-
-name: Build RT Driver (fixed MODVERSIONS)
+name: Build RT Driver (FINAL FIX)
 
 on: 
   push:
@@ -22,7 +21,7 @@ jobs:
         git clone --depth=1 --branch android12-5.10-lts \
           https://android.googlesource.com/kernel/common kernel
     
-    - name: Configure kernel (disable MODVERSIONS)
+    - name: Configure kernel WITHOUT MODVERSIONS
       run: |
         cd kernel
         
@@ -34,15 +33,16 @@ jobs:
         # GKI config
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
-        # КРИТИЧНО: Отключаем MODVERSIONS в kernel config
-        scripts/config --disable CONFIG_MODVERSIONS
-        scripts/config --disable CONFIG_ASM_MODVERSIONS
+        # КРИТИЧНО: Отключаем MODVERSIONS через scripts/config
+        ./scripts/config --disable CONFIG_MODVERSIONS
+        ./scripts/config --disable CONFIG_ASM_MODVERSIONS
+        ./scripts/config --disable CONFIG_MODULE_SRCVERSION_ALL
         
-        # Пересобираем config
+        # Применяем изменения
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
         
-        echo "=== Config check ==="
-        grep MODVERSIONS .config
+        echo "=== MODVERSIONS check ==="
+        grep -E "CONFIG_MODVERSIONS|CONFIG_ASM_MODVERSIONS" .config || echo "MODVERSIONS disabled!"
         
         # Prepare
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
@@ -53,27 +53,28 @@ jobs:
         MODULE_SRC=$(pwd)
         
         cd "$KERNEL_DIR"
-        
-        # Собираем БЕЗ дополнительных флагов (MODVERSIONS уже отключён)
         make -C "$KERNEL_DIR" M="$MODULE_SRC" \
           ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
           modules -j$(nproc)
         
         aarch64-linux-gnu-strip --strip-debug "$MODULE_SRC"/*.ko
     
-    - name: Verify
+    - name: Verify NO MODVERSIONS
       run: |
         echo "=== Module info ==="
-        ls -lh *.ko
         modinfo *.ko
         
         echo ""
-        echo "=== Vermagic ==="
-        modinfo *.ko | grep vermagic
+        echo "=== Vermagic check (should NOT contain 'modversions') ==="
+        VERMAGIC=$(modinfo *.ko | grep vermagic)
+        echo "$VERMAGIC"
         
-        echo ""
-        echo "=== Check for MODVERSIONS ==="
-        modinfo *.ko | grep -i version || echo "No version dependency"
+        if echo "$VERMAGIC" | grep -q "modversions"; then
+          echo "❌ ERROR: Module still has modversions flag!"
+          exit 1
+        else
+          echo "✅ SUCCESS: Module compiled WITHOUT modversions!"
+        fi
     
     - uses: actions/upload-artifact@v4
       with:
