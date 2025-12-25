@@ -36,42 +36,42 @@ jobs:
       run: |
         cd kernel
         
-        # Создаём Module.symvers с НУЛЕВЫМИ CRC (как на устройстве)
-        cat > Module.symvers << 'EOF'
-0x00000000\tmodule_layout\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t__stack_chk_fail\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t__stack_chk_guard\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tkmalloc_caches\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tkmem_cache_alloc_trace\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tkfree\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t__alloc_pages_nodemask\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t__free_pages\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tget_user_pages_remote\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tfind_vma\tvmlinux\tEXPORT_SYMBOL
-0x00000000\taccess_process_vm\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t_raw_spin_lock\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t_raw_spin_unlock\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tprintk\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t__class_create\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tclass_destroy\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tdevice_create\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tdevice_destroy\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tcdev_init\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tcdev_add\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tcdev_del\tvmlinux\tEXPORT_SYMBOL
-0x00000000\talloc_chrdev_region\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tunregister_chrdev_region\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tcurrent_task\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tfind_vpid\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tpid_task\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tcopy_from_user\tvmlinux\tEXPORT_SYMBOL
-0x00000000\tcopy_to_user\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t_copy_from_user\tvmlinux\tEXPORT_SYMBOL
-0x00000000\t_copy_to_user\tvmlinux\tEXPORT_SYMBOL
-EOF
+        cat > Module.symvers << 'SYMVERS_EOF'
+        0x00000000\tmodule_layout\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t__stack_chk_fail\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t__stack_chk_guard\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tkmalloc_caches\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tkmem_cache_alloc_trace\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tkfree\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t__alloc_pages_nodemask\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t__free_pages\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tget_user_pages_remote\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tfind_vma\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\taccess_process_vm\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t_raw_spin_lock\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t_raw_spin_unlock\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tprintk\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t__class_create\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tclass_destroy\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tdevice_create\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tdevice_destroy\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tcdev_init\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tcdev_add\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tcdev_del\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\talloc_chrdev_region\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tunregister_chrdev_region\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tcurrent_task\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tfind_vpid\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tpid_task\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tcopy_from_user\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\tcopy_to_user\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t_copy_from_user\tvmlinux\tEXPORT_SYMBOL
+        0x00000000\t_copy_to_user\tvmlinux\tEXPORT_SYMBOL
+        SYMVERS_EOF
         
-        echo "=== Zero-CRC Module.symvers created ==="
-        cat Module.symvers
+        echo "=== Module.symvers created ==="
+        wc -l Module.symvers
+        head -10 Module.symvers
     
     - name: Build module
       run: |
@@ -89,15 +89,8 @@ EOF
     - name: Verify
       run: |
         echo "=== Module info ==="
+        ls -lh *.ko
         modinfo *.ko
-        
-        echo ""
-        echo "=== Check __versions section ==="
-        readelf -S *.ko | grep __versions || echo "No __versions section (good!)"
-        
-        echo ""
-        echo "=== Strings check ==="
-        strings *.ko | grep "module_layout" || echo "No CRC strings"
     
     - uses: actions/upload-artifact@v4
       with:
