@@ -1,3 +1,4 @@
+
 name: Build RT-Driver
 
 on:
@@ -14,36 +15,39 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
-          wget tar gcc-aarch64-linux-gnu
+        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar gcc-aarch64-linux-gnu
     
-    - name: Download Android 12 kernel 5.10
+    - name: Download kernel 5.10.136
       run: |
-        git clone --depth=1 --branch=android12-5.10 \
-          https://android.googlesource.com/kernel/common kernel
+        git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
         cd kernel
         
         # Конфигурация
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
-        # Подготовка модулей
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
+        # Устанавливаем версию 5.10.136 (вместо 5.10.246)
+        sed -i 's/SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         
-        # Создаём Module.symvers
+        # Проверяем версию
+        make kernelversion
+        
+        # Подготовка
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
         touch Module.symvers
     
-    - name: Build module with GCC
+    - name: Build module
       run: |
         export KBUILD_MODPOST_WARN=1
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel
     
-    - name: Check build
+    - name: Verify vermagic
       run: |
-        ls -lh rt-driver.ko
-        file rt-driver.ko
+        echo "Module vermagic:"
+        modinfo rt-driver.ko | grep vermagic
+        echo "Expected: 5.10.136"
     
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-5.10.136-android12
+        name: rt-driver-5.10.136-correct
         path: "*.ko"
