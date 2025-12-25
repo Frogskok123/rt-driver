@@ -24,15 +24,13 @@ jobs:
         # Конфигурация
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
-        # Устанавливаем ТОЧНУЮ версию как в системе
+        # Устанавливаем версию
         sed -i 's/EXTRAVERSION =.*/EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114/' Makefile
         sed -i 's/SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         
-        # ВАЖНО: Коммитим изменения чтобы убрать -dirty
-        git config user.email "ci@build.local"
-        git config user.name "CI Build"
-        git add -A
-        git commit -m "Set kernel version to match target device" || true
+        # КЛЮЧЕВОЙ момент: создаём пустой .scmversion
+        # Это отключает setlocalversion и убирает -dirty
+        echo "" > .scmversion
         
         # Проверяем версию
         echo "=== Kernel version ==="
@@ -53,12 +51,18 @@ jobs:
         modinfo rt-driver.ko
         echo ""
         echo "=== Vermagic Check ==="
-        modinfo rt-driver.ko | grep vermagic
+        VERMAGIC=$(modinfo rt-driver.ko | grep vermagic | awk '{print $2" "$3" "$4" "$5" "$6" "$7" "$8}')
+        echo "Module vermagic: $VERMAGIC"
+        echo "Expected      : 5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
         echo ""
-        echo "Expected: 5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
+        if echo "$VERMAGIC" | grep -q "dirty"; then
+          echo "WARNING: -dirty suffix still present!"
+        else
+          echo "SUCCESS: No -dirty suffix"
+        fi
         echo ""
         echo "=== Debug strings ==="
-        strings rt-driver.ko | grep "[RT]" | head -5 || echo "Warning: No [RT] strings found"
+        strings rt-driver.ko | grep "[RT]" | head -5
         echo ""
         echo "=== Module size ==="
         ls -lh rt-driver.ko
@@ -66,5 +70,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-vermagic-fixed
+        name: rt-driver-clean-vermagic
         path: rt-driver.ko
