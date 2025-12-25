@@ -26,14 +26,13 @@ jobs:
           https://android.googlesource.com/kernel/common kernel
         
         cd kernel
-        echo "=== Current commit ==="
+        echo "=== Kernel commit ==="
         git log -1 --oneline
     
-    - name: Configure exact kernel version
+    - name: Configure kernel version
       run: |
         cd kernel
         
-        # Устанавливаем версию
         sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         sed -i 's|^EXTRAVERSION =.*|EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114|' Makefile
         echo "" > .scmversion
@@ -41,56 +40,68 @@ jobs:
         echo "=== Kernel version ==="
         make kernelversion
     
-    - name: Configure and prepare kernel
+    - name: Prepare kernel
       run: |
         cd kernel
-        
-        # GKI config
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
         
-        # ИСПРАВЛЕНО: Собираем Module.symvers правильно
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-          modules_prepare -j$(nproc)
+        # Создаём пустой Module.symvers если нет
+        touch Module.symvers
         
-        # Если Module.symvers всё ещё нет, создаём пустой
-        if [ ! -f Module.symvers ]; then
-          echo "⚠️  Module.symvers not found, creating empty file"
-          touch Module.symvers
-        fi
-        
-        echo "=== Module.symvers check ==="
+        echo "=== Ready to build modules ==="
         ls -lh Module.symvers
-        wc -l Module.symvers
-        head -5 Module.symvers || echo "File is empty"
     
-    - name: Build rt-driver module
+    - name: Show module source structure
       run: |
-        cd kernel
+        echo "=== Module source files ==="
+        ls -la
+        echo ""
+        echo "=== Makefile check ==="
+        if [ -f Makefile ]; then
+          echo "✅ Makefile found"
+          head -10 Makefile
+        else
+          echo "❌ Makefile not found!"
+          exit 1
+        fi
+    
+    - name: Build module
+      run: |
+        # Пути
+        KERNEL_DIR=$(pwd)/kernel
+        MODULE_SRC=$(pwd)
         
-        # Собираем модуль
-        make -C $(pwd) M=$(pwd)/../rt-driver \
+        echo "=== Building module ==="
+        echo "Kernel: $KERNEL_DIR"
+        echo "Module: $MODULE_SRC"
+        
+        # Переходим в kernel и собираем
+        cd "$KERNEL_DIR"
+        make -C "$KERNEL_DIR" M="$MODULE_SRC" \
           ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
           modules -j$(nproc)
         
-        # Strip
-        aarch64-linux-gnu-strip --strip-debug ../rt-driver/rt-driver.ko
+        echo "=== Build result ==="
+        ls -lh "$MODULE_SRC"/*.ko
+    
+    - name: Strip module
+      run: |
+        # Strip debug symbols
+        aarch64-linux-gnu-strip --strip-debug *.ko
         
-        echo "=== Build complete ==="
-        ls -lh ../rt-driver/rt-driver.ko
+        echo "=== After strip ==="
+        ls -lh *.ko
     
     - name: Verify module
       run: |
         echo "=== Module info ==="
-        file rt-driver/rt-driver.ko
-        ls -lh rt-driver/rt-driver.ko
+        file *.ko
+        modinfo *.ko
         
         echo ""
-        echo "=== Full modinfo ==="
-        modinfo rt-driver/rt-driver.ko
-        
-        echo ""
-        echo "=== Vermagic check ==="
-        MODULE_VER=$(modinfo rt-driver/rt-driver.ko | grep "vermagic:" | sed 's/vermagic: *//')
+        echo "=== Vermagic verification ==="
+        MODULE_VER=$(modinfo *.ko | grep "vermagic:" | sed 's/vermagic: *//')
         DEVICE_VER="5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
         
         echo "Module  : $MODULE_VER"
@@ -98,19 +109,15 @@ jobs:
         
         if [ "$MODULE_VER" = "$DEVICE_VER" ]; then
           echo ""
-          echo "✅✅✅ SUCCESS: Vermagic matches exactly! ✅✅✅"
+          echo "✅✅✅ PERFECT MATCH! Module ready for device! ✅✅✅"
         else
           echo ""
-          echo "⚠️  WARNING: Vermagic differs:"
-          echo "   Module  : '$MODULE_VER'"
-          echo "   Expected: '$DEVICE_VER'"
-          echo ""
-          echo "Difference:"
+          echo "⚠️  Vermagic differs:"
           diff -u <(echo "$DEVICE_VER") <(echo "$MODULE_VER") || true
         fi
     
     - name: Upload module
       uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-plato
-        path: rt-driver/rt-driver.ko
+        name: rt-driver-plato-mt6895
+        path: "*.ko"
