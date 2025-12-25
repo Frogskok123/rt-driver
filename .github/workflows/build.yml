@@ -20,17 +20,11 @@ jobs:
           flex \
           libssl-dev
     
-    - name: Download exact kernel commit
+    - name: Download kernel (simple)
       run: |
-        git clone --depth=1 https://android.googlesource.com/kernel/common kernel
-        cd kernel
-        
-        # ТОЧНЫЙ commit из твоего устройства
-        git fetch --unshallow origin android12-5.10-lts || git fetch --depth=500 origin android12-5.10-lts
-        git checkout gc9f59ef34367
-        
-        echo "=== Git commit info ==="
-        git log -1 --oneline
+       git clone --depth=1 \
+       --branch android12-5.10-lts \
+       https://android.googlesource.com/kernel/common kernel
     
     - name: Configure kernel version
       run: |
