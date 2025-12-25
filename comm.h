@@ -29,7 +29,7 @@ enum OPERATIONS {
     OP_GET_PROCESS_PID = 0x806
 };
 
-char* get_rand_str(void)
+static char* get_rand_str(void)
 {
 	static char string[10];
 	int lstr,seed,flag,i;
