@@ -160,7 +160,7 @@ static int __init driver_entry(void) {
         return ret;
     }
 
-    mem_tool_class = class_create(devicename);
+    mem_tool_class = class_create(THIS_MODULE, devicename);
     
     if (IS_ERR(mem_tool_class)) {
         cdev_del(&memdev.cdev);
