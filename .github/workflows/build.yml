@@ -14,7 +14,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget
+        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget cpio kmod
     
     - name: Setup Clang
       run: |
@@ -29,14 +29,38 @@ jobs:
       run: |
         git clone --depth=1 https://android.googlesource.com/kernel/common kernel
         cd kernel
+        
+        # Конфигурация
         make ARCH=arm64 LLVM=1 defconfig
-        make ARCH=arm64 LLVM=1 modules_prepare
+        
+        # Включаем поддержку модулей
+        ./scripts/config --enable CONFIG_MODULES
+        ./scripts/config --enable CONFIG_MODULE_UNLOAD
+        ./scripts/config --enable CONFIG_KALLSYMS
+        ./scripts/config --enable CONFIG_KALLSYMS_ALL
+        
+        # Полная подготовка kernel
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc) modules_prepare
+        
+        # Создаём Module.symvers
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc) modules || true
     
-    - name: Build
-      run: make KDIR=$PWD/kernel
+    - name: Build module
+      run: |
+        export ARCH=arm64
+        export LLVM=1
+        export LLVM_IAS=1
+        export KBUILD_MODPOST_WARN=1
+        make KDIR=$PWD/kernel
+    
+    - name: Check output
+      run: |
+        ls -lh *.ko || echo "No .ko file"
+        file *.ko || true
     
     - name: Upload
       uses: actions/upload-artifact@v4
+      if: success()
       with:
         name: rt-driver
         path: "*.ko"
