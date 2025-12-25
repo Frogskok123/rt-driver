@@ -90,7 +90,7 @@ uintptr_t get_module_base(pid_t pid, const char *name)
 }
 #endif
 
-pid_t get_process_pid(char *comm)
+static pid_t get_process_pid(char *comm)
 {
 	struct task_struct *task;
 	for_each_process(task) {
