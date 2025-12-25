@@ -14,7 +14,7 @@
 #include <asm/pgtable.h>
 
 #if(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 61))
-phys_addr_t translate_linear_address(struct mm_struct* mm, uintptr_t va) {
+static phys_addr_t translate_linear_address(struct mm_struct* mm, uintptr_t va) {
 
 	pgd_t *pgd;
 	p4d_t *p4d;
@@ -56,7 +56,7 @@ phys_addr_t translate_linear_address(struct mm_struct* mm, uintptr_t va) {
 	return page_addr + page_offset;
 }
 #else
-phys_addr_t translate_linear_address(struct mm_struct* mm, uintptr_t va) {
+static phys_addr_t translate_linear_address(struct mm_struct* mm, uintptr_t va) {
 
 	pgd_t *pgd;
 	pmd_t *pmd;
@@ -95,7 +95,7 @@ phys_addr_t translate_linear_address(struct mm_struct* mm, uintptr_t va) {
 #endif
 
 
-size_t read_physical_address(phys_addr_t pa, void* buffer, size_t size) {
+static size_t read_physical_address(phys_addr_t pa, void* buffer, size_t size) {
 	void* mapped;
 
 	if (!pfn_valid(__phys_to_pfn(pa))) {
@@ -114,7 +114,7 @@ size_t read_physical_address(phys_addr_t pa, void* buffer, size_t size) {
 	return size;
 }
 
-size_t write_physical_address(phys_addr_t pa, void* buffer, size_t size) {
+static size_t write_physical_address(phys_addr_t pa, void* buffer, size_t size) {
 	void* mapped;
 
 	if (!pfn_valid(__phys_to_pfn(pa))) {
@@ -132,7 +132,7 @@ size_t write_physical_address(phys_addr_t pa, void* buffer, size_t size) {
 	return size;
 }
 
-bool read_process_memory(pid_t pid, uintptr_t addr, void* buffer, size_t size)
+static bool read_process_memory(pid_t pid, uintptr_t addr, void* buffer, size_t size)
 {
 	struct task_struct* task;
 	struct mm_struct* mm;
@@ -165,7 +165,7 @@ bool read_process_memory(pid_t pid, uintptr_t addr, void* buffer, size_t size)
 	return count;
 }
 
-bool write_process_memory(pid_t pid, uintptr_t addr, void* buffer, size_t size)
+static bool write_process_memory(pid_t pid, uintptr_t addr, void* buffer, size_t size)
 {
 	struct task_struct* task;
 	struct mm_struct* mm;
