@@ -1,4 +1,3 @@
-
 name: Build RT-Driver
 
 on:
@@ -25,10 +24,12 @@ jobs:
         # Конфигурация
         make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
-        # Устанавливаем версию 5.10.136 (вместо 5.10.246)
+        # Устанавливаем ТОЧНУЮ версию как в твоей системе
+        sed -i 's/EXTRAVERSION =.*/EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114/' Makefile
         sed -i 's/SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
         
         # Проверяем версию
+        echo "Kernel version:"
         make kernelversion
         
         # Подготовка
@@ -42,12 +43,15 @@ jobs:
     
     - name: Verify vermagic
       run: |
-        echo "Module vermagic:"
+        echo "=== Module vermagic ==="
         modinfo rt-driver.ko | grep vermagic
-        echo "Expected: 5.10.136"
+        echo ""
+        echo "Expected: 5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
+        echo ""
+        strings rt-driver.ko | grep "[RT]" || echo "Warning: No [RT] debug strings found"
     
-    - name: Upload
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: rt-driver-5.10.136-correct
+        name: rt-driver-5.10.136-fixed-vermagic
         path: "*.ko"
