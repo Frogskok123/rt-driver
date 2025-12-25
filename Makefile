@@ -1,19 +1,27 @@
-obj-m := rt-driver.o
-rt-driver-objs := entry.o
+MODULE_NAME := rt_driver
+RESMAN_CORE_OBJS := entry.o
 
-ARCH := arm64
-CROSS_COMPILE ?= aarch64-linux-gnu-
-KDIR ?= /lib/modules/$(shell uname -r)/build
+# ДОБАВЬ ЭТИ СТРОКИ (из rwProcMem33)
+ccflags-y += -DCONFIG_MODVERSIONS=0
+ccflags-y += -fno-pic
+ccflags-y += -Wno-declaration-after-statement
 
-export KBUILD_MODPOST_WARN=1
-
+ifneq ($(KERNELRELEASE),)
+	obj-m := $(MODULE_NAME).o
+	$(MODULE_NAME)-objs := $(RESMAN_CORE_OBJS)
+	
+	# ДОБАВЬ ЭТО для обхода MODVERSIONS
+	KBUILD_MODPOST_WARN := 1
+else
+	KDIR := kernel
+	
 all:
-	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KDIR) M=$(PWD) modules
+	make -C $(KDIR) M=$(PWD) ARCH=arm64 \
+		CROSS_COMPILE=aarch64-linux-gnu- \
+		KBUILD_MODPOST_WARN=1 \
+		modules -j$(nproc)
+	aarch64-linux-gnu-strip --strip-debug $(MODULE_NAME).ko
 
 clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
-	rm -f *.o *.ko *.mod.c *.mod *.order *.symvers .*.cmd
-	rm -rf .tmp_versions
-
-.PHONY: all clean
-
+	rm -rf *.ko *.o *.mod .*.*.cmd *.mod.o *.mod.c *.symvers *.order .tmp_versions
+endif
