@@ -1,4 +1,4 @@
-name: Build RT-Driver
+name: Build Universal RT-Driver (5.10.x)
 
 on:
   push:
@@ -7,68 +7,51 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar gcc-aarch64-linux-gnu
-    
-    - name: Download and configure kernel 5.10.136
-      run: |
-        git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
-        cd kernel
-        
-        # Конфигурация
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
-        
-        # Устанавливаем версию
-        sed -i 's/EXTRAVERSION =.*/EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114/' Makefile
-        sed -i 's/SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
-        
-        # КЛЮЧЕВОЙ момент: создаём пустой .scmversion
-        # Это отключает setlocalversion и убирает -dirty
-        echo "" > .scmversion
-        
-        # Проверяем версию
-        echo "=== Kernel version ==="
-        make kernelversion
-        
-        # Подготовка
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
-        touch Module.symvers
-    
-    - name: Build module
-      run: |
-        export KBUILD_MODPOST_WARN=1
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel -j$(nproc)
-    
-    - name: Verify module
-      run: |
-        echo "=== Module Info ==="
-        modinfo rt-driver.ko
-        echo ""
-        echo "=== Vermagic Check ==="
-        VERMAGIC=$(modinfo rt-driver.ko | grep vermagic | awk '{print $2" "$3" "$4" "$5" "$6" "$7" "$8}')
-        echo "Module vermagic: $VERMAGIC"
-        echo "Expected      : 5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
-        echo ""
-        if echo "$VERMAGIC" | grep -q "dirty"; then
-          echo "WARNING: -dirty suffix still present!"
-        else
-          echo "SUCCESS: No -dirty suffix"
-        fi
-        echo ""
-        echo "=== Debug strings ==="
-        strings rt-driver.ko | grep "[RT]" | head -5
-        echo ""
-        echo "=== Module size ==="
-        ls -lh rt-driver.ko
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: rt-driver-clean-vermagic
-        path: rt-driver.ko
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar gcc-aarch64-linux-gnu
+
+      - name: Clone kernel 5.10 android12
+        run: |
+          git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
+          cd kernel
+
+          # базовая конфигурация
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+
+          # убираем MODVERSIONS и MODULE_SRCVERSION_ALL
+          ./scripts/config --file .config \
+              -d MODVERSIONS \
+              -d MODULE_SRCVERSION_ALL
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+          # фикс версии (убираем -dirty)
+          echo "" > .scmversion
+
+          # подготовка
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
+
+      - name: Build universal module
+        run: |
+          export KBUILD_MODPOST_WARN=1
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel -j$(nproc)
+
+      - name: Check vermagic
+        run: |
+          echo "=== Module vermagic ==="
+          modinfo rt-driver.ko | grep vermagic
+          echo ""
+          echo "=== Expected universal string ==="
+          echo "5.10.0 SMP preempt mod_unload aarch64"
+
+      - name: Upload universal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rt-driver-universal-5.10.ko
+          path: rt-driver.ko
+
