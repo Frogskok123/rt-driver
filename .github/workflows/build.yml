@@ -14,38 +14,33 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar
-    
-    - name: Setup Clang
-      run: |
-        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android14-release/clang-r487747c.tar.gz
-        mkdir clang && tar xzf clang-r487747c.tar.gz -C clang
-        echo "$PWD/clang/bin" >> $GITHUB_PATH
+        sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
+          wget tar gcc-aarch64-linux-gnu
     
     - name: Download Android 12 kernel 5.10
       run: |
-        git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
+        git clone --depth=1 --branch=android12-5.10 \
+          https://android.googlesource.com/kernel/common kernel
         cd kernel
         
-        # Конфигурация для Android 12
-        make ARCH=arm64 LLVM=1 gki_defconfig
+        # Конфигурация
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
         
         # Подготовка модулей
-        make ARCH=arm64 LLVM=1 modules_prepare -j$(nproc)
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
         
         # Создаём Module.symvers
         touch Module.symvers
     
-    - name: Build module
+    - name: Build module with GCC
       run: |
         export KBUILD_MODPOST_WARN=1
-        make ARCH=arm64 LLVM=1 LLVM_IAS=1 KDIR=$PWD/kernel
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel
     
     - name: Check build
       run: |
         ls -lh rt-driver.ko
         file rt-driver.ko
-        modinfo rt-driver.ko || true
     
     - name: Upload
       uses: actions/upload-artifact@v4
