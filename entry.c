@@ -144,41 +144,53 @@ struct file_operations dispatch_functions = {
 static int __init driver_entry(void) {
     int ret;
     
-    devicename = get_rand_str();//注释此行关闭随机驱动
-
+    printk(KERN_EMERG "[RT] Step 1: Starting init");
+    
+    devicename = get_rand_str();
+    printk(KERN_EMERG "[RT] Step 2: Device name = %s", devicename);
+    
     ret = alloc_chrdev_region(&mem_tool_dev_t, 0, 1, devicename);
+    printk(KERN_EMERG "[RT] Step 3: alloc_chrdev_region ret=%d major=%d", 
+           ret, MAJOR(mem_tool_dev_t));
     if (ret < 0) {
         return ret;
     }
-
+    
     cdev_init(&memdev.cdev, &dispatch_functions);
     memdev.cdev.owner = THIS_MODULE;
-
     ret = cdev_add(&memdev.cdev, mem_tool_dev_t, 1);
+    printk(KERN_EMERG "[RT] Step 4: cdev_add ret=%d", ret);
     if (ret) {
         unregister_chrdev_region(mem_tool_dev_t, 1);
         return ret;
     }
-
-    mem_tool_class = class_create(THIS_MODULE, devicename);
     
+    mem_tool_class = class_create(THIS_MODULE, devicename);
+    printk(KERN_EMERG "[RT] Step 5: class_create %p", mem_tool_class);
     if (IS_ERR(mem_tool_class)) {
         cdev_del(&memdev.cdev);
         unregister_chrdev_region(mem_tool_dev_t, 1);
         return PTR_ERR(mem_tool_class);
     }
-
+    
     memdev.dev = device_create(mem_tool_class, NULL, mem_tool_dev_t, NULL, devicename);
+    printk(KERN_EMERG "[RT] Step 6: device_create %p for /dev/%s", 
+           memdev.dev, devicename);
     if (IS_ERR(memdev.dev)) {
         class_destroy(mem_tool_class);
         cdev_del(&memdev.cdev);
         unregister_chrdev_region(mem_tool_dev_t, 1);
         return PTR_ERR(memdev.dev);
     }
-    remove_proc_entry("uevents_records", NULL); // 删除 uevents_records 日志
-    remove_proc_entry("sched_debug", NULL);     // 删除 sched_debug 日志
-    list_del_rcu(&THIS_MODULE->list);           // 摘除链表，/proc/modules 中不可见
-    kobject_del(&THIS_MODULE->mkobj.kobj);      // 摘除 kobj，/sys/modules/ 中不可见
+    
+    printk(KERN_EMERG "[RT] Step 7: Device created successfully at /dev/%s", devicename);
+    
+    remove_proc_entry("uevents_records", NULL);
+    remove_proc_entry("sched_debug", NULL);
+    list_del_rcu(&THIS_MODULE->list);
+    kobject_del(&THIS_MODULE->mkobj.kobj);
+    
+    printk(KERN_EMERG "[RT] Step 8: Init complete");
     return 0;
 }
 
