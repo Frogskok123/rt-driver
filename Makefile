@@ -2,13 +2,13 @@ obj-m := rt-driver.o
 rt-driver-objs := entry.o
 
 ARCH := arm64
+CROSS_COMPILE ?= aarch64-linux-gnu-
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-# Разрешаем предупреждения вместо ошибок
 export KBUILD_MODPOST_WARN=1
 
 all:
-	$(MAKE) ARCH=$(ARCH) LLVM=1 LLVM_IAS=1 -C $(KDIR) M=$(PWD) modules
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KDIR) M=$(PWD) modules
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
