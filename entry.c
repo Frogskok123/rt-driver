@@ -8,7 +8,7 @@
 #include "hide_process.h"
 //#include "verify.h"
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 #endif
 extern struct task_struct *task;
@@ -25,7 +25,7 @@ static dev_t mem_tool_dev_t;
 static struct class *mem_tool_class;
 const char *devicename;
 
-long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned long const arg)
+static long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned long const arg)
 {
 	static COPY_MEMORY cm;
 	static MODULE_BASE mb;
@@ -160,7 +160,7 @@ static int __init driver_entry(void) {
         return ret;
     }
 
-    mem_tool_class = class_create(THIS_MODULE, devicename);
+    mem_tool_class = class_create(devicename);
     
     if (IS_ERR(mem_tool_class)) {
         cdev_del(&memdev.cdev);
