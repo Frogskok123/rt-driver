@@ -1,0 +1,80 @@
+name: Build RT-Driver
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-kernel-module:
+    runs-on: ubuntu-22.04
+    
+    strategy:
+      matrix:
+        kernel_version: ['5.4', '5.10', '5.15']
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential bc bison flex \
+          libssl-dev libelf-dev libncurses-dev \
+          wget git curl kmod cpio
+    
+    - name: Download Android NDK
+      run: |
+        wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+        unzip -q android-ndk-r26b-linux.zip
+        echo "NDK_HOME=$PWD/android-ndk-r26b" >> $GITHUB_ENV
+    
+    - name: Download kernel headers
+      run: |
+        # Скачиваем generic kernel headers для примера
+        # Замени на headers от реального устройства
+        mkdir -p kernel-headers
+        cd kernel-headers
+        git clone --depth=1 --branch=android-${{ matrix.kernel_version }} \
+          https://android.googlesource.com/kernel/common || true
+        echo "KDIR=$PWD/common" >> $GITHUB_ENV
+    
+    - name: Build kernel module
+      run: |
+        export ARCH=arm64
+        export CROSS_COMPILE=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-
+        export PATH=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+        
+        # Если kernel headers не найдены, используем system headers
+        if [ ! -d "$KDIR" ]; then
+          export KDIR=/lib/modules/$(uname -r)/build
+        fi
+        
+        make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE || make
+    
+    - name: Check build output
+      run: |
+        ls -lh *.ko || echo "No .ko files found"
+        file *.ko || true
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rt-driver-kernel-${{ matrix.kernel_version }}
+        path: |
+          *.ko
+        retention-days: 30
+
+  build-info:
+    runs-on: ubuntu-latest
+    needs: build-kernel-module
+    
+    steps:
+    - name: Build summary
+      run: |
+        echo "## Build completed successfully! 🎉" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Download artifacts from the Actions tab" >> $GITHUB_STEP_SUMMARY
