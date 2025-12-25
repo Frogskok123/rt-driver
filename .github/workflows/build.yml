@@ -1,57 +1,130 @@
-name: Build Universal RT-Driver (5.10.x)
+name: Build rt-driver for plato (MT6895)
 
-on:
-  push:
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev wget tar gcc-aarch64-linux-gnu
-
-      - name: Clone kernel 5.10 android12
-        run: |
-          git clone --depth=1 --branch=android12-5.10 https://android.googlesource.com/kernel/common kernel
-          cd kernel
-
-          # базовая конфигурация
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
-
-          # убираем MODVERSIONS и MODULE_SRCVERSION_ALL
-          ./scripts/config --file .config \
-              -d MODVERSIONS \
-              -d MODULE_SRCVERSION_ALL
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-
-          # фикс версии (убираем -dirty)
-          echo "" > .scmversion
-
-          # подготовка
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j$(nproc)
-
-      - name: Build universal module
-        run: |
-          export KBUILD_MODPOST_WARN=1
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=$PWD/kernel -j$(nproc)
-
-      - name: Check vermagic
-        run: |
-          echo "=== Module vermagic ==="
-          modinfo rt-driver.ko | grep vermagic
-          echo ""
-          echo "=== Expected universal string ==="
-          echo "5.10.0 SMP preempt mod_unload aarch64"
-
-      - name: Upload universal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rt-driver-universal-5.10.ko
-          path: rt-driver.ko
-
+    - uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gcc-aarch64-linux-gnu \
+          libelf-dev \
+          bc \
+          bison \
+          flex \
+          libssl-dev
+    
+    - name: Download exact kernel commit
+      run: |
+        # Клонируем GKI kernel
+        git clone --depth=1 https://android.googlesource.com/kernel/common kernel
+        cd kernel
+        
+        # Переключаемся на ТОЧНЫЙ commit из твоего устройства
+        git fetch --unshallow origin android12-5.10-lts || git fetch --depth=500 origin android12-5.10-lts
+        git checkout gc9f59ef34367
+        
+        echo "=== Git commit info ==="
+        git log -1 --oneline
+        git log -1 --format="%H %s"
+    
+    - name: Configure kernel version
+      run: |
+        cd kernel
+        
+        # Устанавливаем ТОЧНУЮ версию
+        sed -i 's/^VERSION = .*/VERSION = 5/' Makefile
+        sed -i 's/^PATCHLEVEL = .*/PATCHLEVEL = 10/' Makefile
+        sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 136/' Makefile
+        sed -i 's|^EXTRAVERSION =.*|EXTRAVERSION = -android12-9-00020-gc9f59ef34367-ab9585114|' Makefile
+        
+        # Убираем -dirty
+        echo "" > .scmversion
+        
+        echo "=== Makefile version ==="
+        head -5 Makefile
+        
+        echo "=== Kernel version ==="
+        make kernelversion
+    
+    - name: Configure kernel
+      run: |
+        cd kernel
+        
+        # Используем GKI config
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        
+        # Включаем необходимые опции для модуля
+        scripts/config --enable CONFIG_MODULES
+        scripts/config --enable CONFIG_MODULE_UNLOAD
+        scripts/config --enable CONFIG_MODVERSIONS
+        scripts/config --enable CONFIG_MODULE_SRCVERSION_ALL
+        
+        echo "=== Config check ==="
+        grep -E "CONFIG_MODVERSIONS|CONFIG_MODULE" .config | head -10
+    
+    - name: Prepare kernel headers
+      run: |
+        cd kernel
+        
+        # Генерируем Module.symvers
+        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          modules_prepare -j$(nproc)
+        
+        echo "=== Module.symvers generated ==="
+        ls -lh Module.symvers
+        echo "=== Module.symvers first 10 lines ==="
+        head -10 Module.symvers
+    
+    - name: Build module
+      run: |
+        cd kernel
+        
+        # Собираем модуль
+        make -C $(pwd) M=$(pwd)/../rt-driver \
+          ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          modules -j$(nproc)
+        
+        # Strip debug symbols (как у друга)
+        aarch64-linux-gnu-strip --strip-debug ../rt-driver/rt-driver.ko
+    
+    - name: Verify module
+      run: |
+        echo "=== Module Info ==="
+        file rt-driver/rt-driver.ko
+        ls -lh rt-driver/rt-driver.ko
+        
+        echo "=== Modinfo ==="
+        modinfo rt-driver/rt-driver.ko
+        
+        echo "=== Vermagic Check ==="
+        MODULE_VERMAGIC=$(modinfo rt-driver/rt-driver.ko | grep vermagic | sed 's/vermagic: *//')
+        EXPECTED_VERMAGIC="5.10.136-android12-9-00020-gc9f59ef34367-ab9585114 SMP preempt mod_unload modversions aarch64"
+        
+        echo "Module  : $MODULE_VERMAGIC"
+        echo "Expected: $EXPECTED_VERMAGIC"
+        
+        if [ "$MODULE_VERMAGIC" = "$EXPECTED_VERMAGIC" ]; then
+          echo "✅ SUCCESS: Vermagic matches exactly!"
+        else
+          echo "❌ WARNING: Vermagic mismatch"
+          exit 1
+        fi
+        
+        echo "=== Symbol check ==="
+        nm rt-driver/rt-driver.ko | grep -E "driver_entry|dispatch_ioctl" || true
+        
+        echo "=== Strings check ==="
+        strings rt-driver/rt-driver.ko | grep -E "RT|driver" | head -10 || true
+    
+    - name: Upload module
+      uses: actions/upload-artifact@v3
+      with:
+        name: rt-driver-plato-mt6895
+        path: rt-driver/rt-driver.ko
